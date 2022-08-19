@@ -1,0 +1,302 @@
+---
+title: "Project1: NYC Crime Analysis"
+output: pdf_document
+date: '2022-07-31'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Aim
+
+The aim of this markdown is to analyse dataset for [NYPD Shooting Incident Data (Historic)](https://data.cityofnewyork.us/resource/833y-fsy8.csv)
+
+The dataset captures all shooting incidents reported In New York City starting from the year 2006. The details of the incident such as location, time, victim and perpetrator are also included in the dataset.
+
+Publisher : [City of New York](https://catalog.data.gov/dataset?publisher=data.cityofnewyork.us)
+
+## Prepare for Analyses
+
+Import Library
+
+```{r }
+set.seed(1234)
+library(tidyverse)
+library('lubridate')
+library(ggplot2)
+library(scales)
+```
+
+## Get URL
+
+Copy the URL and Store into a variable so that it can be read as a csv:
+
+```{r url_in, echo=TRUE}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+```
+
+## Read Dataset from URL
+
+Using read_csv function, store the dataset into a tibble
+
+```{r read_csv(url_in)}
+df = read_csv(url_in)
+```
+
+## Print Dataset
+
+Let us print the dataset stored in the tibble called df to see what its contents are(rows and columns):
+
+```{r data}
+head(df) 
+```
+
+## Tidy and Transform Data
+
+Lets get a list of all the columns in the dataset:
+
+```{r colnames(df)}
+colnames(df)
+```
+
+**Reorganize Columns** : Lets remove the columns we don't want in this dataset: We will remove the following - **JURISDICTION_CODE**, **X_COORD_CD**, **Y_COORD_CD**, **Lon_Lat**
+
+```{r}
+df <- df %>% select(INCIDENT_KEY,
+                    OCCUR_DATE,
+                    OCCUR_TIME,
+                    BORO,
+                    PRECINCT,
+                    LOCATION_DESC,
+                    STATISTICAL_MURDER_FLAG,
+                    PERP_AGE_GROUP,
+                    PERP_SEX,
+                    PERP_RACE,
+                    VIC_AGE_GROUP,
+                    VIC_SEX,
+                    VIC_RACE,
+                    Latitude,
+                    Longitude)
+```
+
+**Handle NA/Blank values** : Next, we want handles blank values in the data. For various reasons such as case or investigation currently active, or lack of proof, certain columns would have incomplete or blank data. Lets check how many columns have blank data:
+
+```{r}
+lapply(df, function(x) sum(is.na(x)))
+```
+
+We see that 4 columns i.e LOCATION_DESC,PERP_AGE_GROUP,PERP_SEX and PERP_RACE have blanks. Lets replace these to 'UNKNOWN'
+
+```{r df %>% replace_na(list(LOCATION_DESC = "UNKNOWN", PERP_AGE_GROUP = "UNKNOWN", PERP_SEX = "UNKNOWN",PERP_RACE))}
+df <- df %>% replace_na(list(LOCATION_DESC = "UNKNOWN", 
+                       PERP_AGE_GROUP = "UNKNOWN", 
+                       PERP_SEX = "UNKNOWN",
+                       PERP_RACE = "UNKNOWN"))
+```
+
+**Column Data Type Conversion** : We will convert OCCUR_DATE to a date field(it is a String currently). We will also create a factor for the fields - BORO,PERP_AGE_GROUP,VIC_AGE_GROUP,LOCATION_DESC,STATISTICAL_MURDER_FLAG,PERP_SEX,PERP_RACE,VIC_SEX,VIC_RACE
+
+```{r}
+
+df$BORO = as.factor(df$BORO)
+df$PERP_AGE_GROUP = as.factor(df$PERP_AGE_GROUP)
+df$VIC_AGE_GROUP = as.factor(df$VIC_AGE_GROUP)
+df$LOCATION_DESC = as.factor(df$LOCATION_DESC)
+df$STATISTICAL_MURDER_FLAG = as.factor(df$STATISTICAL_MURDER_FLAG)
+df$PERP_SEX = as.factor(df$PERP_SEX)
+df$PERP_RACE = as.factor(df$PERP_RACE)
+df$VIC_SEX = as.factor(df$VIC_SEX)
+df$VIC_RACE = as.factor(df$VIC_RACE)
+df$OCCUR_DATE <- as.Date(df$OCCUR_DATE , format = "%m/%d/%Y")
+
+
+```
+
+**Tracking Hour Column** : We will create a new column which will store the hour of the day for each incident. This will be useful to analyze and easily group incidents by Hour.
+
+```{r}
+df$HOUR = hour(df$OCCUR_TIME)
+```
+
+## Summary of the Dataset
+
+```{r}
+summary(df)
+```
+
+## Add Visualizations and Analysis
+
+### 1. What time of the day is crime most prevelant? Is this trend consistent across all neighbourhoods?
+
+```{r}
+df_h = df %>% 
+  group_by(HOUR) %>%
+  count() 
+
+
+
+ggplot(df_h, aes(x = HOUR, y = n)) +
+  geom_line(aes(color = n), size = 1) + 
+  
+    scale_colour_gradient(low = "gray", high = "#0072B2") +
+  labs(
+    x = "Hour of the Day",
+    y = "Total Number of Incidents",
+    colour = "No. of Incidents",
+    title = "Total Incidents Reported for each Hour Across All Borough "
+  )  + scale_fill_brewer(palette='Accent')
+
+```
+
+**Observations :** We observe, that the number of crime incidents reported drastically increase after dark and drop down once it is daylight outside. On average, we see a big spike in crime post 6PM and it reaches its highest point around midnight(200+ reported incidents at this hour). Post which, it slowly starts to drop down, while still maintaining a high mark and finally drops down by sunrise. The lowest number of incidents reported is as the workday starts around 8AM(less than 250 incidents).
+
+**Question Raised :** Do various other BOROughs follow the same pattern that is observed citywide i.e crime drastically increase after sunset and dips during work hours? Or is this something mainly observed by less residential and more business areas ?
+
+### To look into this question, we will plot the number of incidents reported per hour for each Bourough -
+
+```{r}
+
+df_hb = df %>% 
+  group_by(HOUR,BORO) %>%
+  count() 
+
+
+ggplot(df_hb, aes(x = HOUR, y = n, group = BORO)) +
+  geom_line(aes(color = BORO), size = 1) +
+  geom_point(aes(color = BORO), size = 1) +
+  theme(legend.position = "top") +
+  labs(
+    x = "Hour of the Day",
+    y = "Number of Incidents",
+    colour = "Borough",
+    title = "Incidents reported for each Hour of the Day per Borough? "
+  )  
+
+
+```
+
+**Observation :** We can say that The citywide trend of crime increase after dark is followed by almost all the Borough of NYC. We see an uptick in incidents reported for all, except Staten island which still has its highest number of incidents reported early morning and drops down post 5AM. This could also be since Staten Island is further away from the city, and people had a 1hr+ commute to the city, hence, most people in Staten island tend to leave for the city due to work, and due to the commute, have to leave early. Hence, less people tend to go to Staten Island during the day as compared to people migrating from Staten island.
+
+We also observe that among all the Borough, Brooklyn,Bronx and Queens register the highest number of incidents reported for each hour, closely followed by Manhattan. All the Borough follow a citywide pattern of crime increasing after work hours and decreasing during the day.
+
+**Question raised:** We have not accounted for population so far. This raises the question, that in any given hour, how many people per 10,000 people(or per capita) are affected by crime. And how many of those incidents are Murders. Does a neighborhood with highest number of incidents reported also have the highest number of murders? Can we have a scenario where we have an uptick in incidents reported but a decrease in murders?
+
+### 2. What is the proportion of Murders for total reported shooting incidents?
+
+```{r}
+
+df_OCCUR_YEAR <- as.Date(df$OCCUR_DATE)
+df$OCCUR_YEAR <- as.numeric(format(df_OCCUR_YEAR, "%Y"))
+
+df_YEAR = df %>%
+  group_by(OCCUR_YEAR,STATISTICAL_MURDER_FLAG) %>%
+  count()
+
+ggplot(df_YEAR, aes(x = OCCUR_YEAR, y = n,group=STATISTICAL_MURDER_FLAG)) +
+  geom_line(aes(color = STATISTICAL_MURDER_FLAG), size = 1) +
+  geom_point(aes(color = STATISTICAL_MURDER_FLAG), size = 2) +
+  theme(legend.position = "top") +
+  labs(
+    x = "Year",
+    y = "Number of Incidents",
+    title = "How many Incidents of Shooting were Murders? "
+  )  
+```
+
+**Observation** About 20% of total shooting reported are Murders. In the graph above, we see that approx 400 incidents were Murders, while approx 1600 incidents were non-murder related shootings. Total 20% of reported shootings are murder.
+
+Which borough has the highest number of reported murders?
+
+```{r }
+df_YEAR_m = df %>%
+  group_by(BORO,STATISTICAL_MURDER_FLAG) %>%
+  count()
+  
+  # creating plot using the above data
+ggplot(df_YEAR_m, aes(BORO,n, fill=STATISTICAL_MURDER_FLAG))  + 
+  geom_bar(stat="identity", position = "dodge") + 
+  scale_fill_brewer(palette = "Set1",direction=-1) +
+    theme(legend.position = "top") +
+  labs(
+    x = "Borough",
+    y = "Number of Incidents",
+    title = "How Many Incidents of Shooting were Murders (2006-2021) ? "
+  )  
+
+  
+```
+
+**Observation :** We see that just like the total number of non-murder shootings, murders are also the highest in Brooklyn, Bronx, Queens and closely followed by Manhattan. While Staten Island has the lowest amount of shootings, it has the highest proportion of murders when compared to its total reported shootings. Brooklyn, Bronx and Manhattan are lower than citywide trend of Murder - non murder proportion i.e around 18 percent (NYC City proportion for murder vs total shootings is 20%). Staten island has the highest proportion with 22% while queens is at 21%. overall, we can conclude that each Borough has 1/4 of total reported incidents classified as Murder.
+
+Overall Data for Reported Shootings for Each Borough - 
+
+```{r df_YEAR_m}
+df_YEAR_m
+```
+
+
+**Questions Raised :** We observe that there was a decline in total shootings for the year 2018-19 and then an uptick post 2020. What were the events that may have contributed to this? Also, post Covid wave of 2020, with property value changing, and people working remote permanently, along with a change is homelessness, how had that impacted the number of shootings in the city?
+
+## Which Day do we get the most shootings? Is it more on Weekdays or Weekends?
+
+
+```{r}
+df$OCCUR_DAY <- weekdays(as.Date(df$OCCUR_DATE))
+df_Day = df %>%
+  group_by(OCCUR_DAY) %>%
+  count()
+
+
+df_Day$WEEK_PERIOD <- with(
+  df_Day, ifelse(OCCUR_DAY == "Saturday" | OCCUR_DAY == "Sunday","Weekend", "Weekday"))
+
+ggplot(df_Day, aes(x = OCCUR_DAY, y = n, fill=WEEK_PERIOD)) +
+  geom_bar(stat="identity") +
+  labs(title = "Which day of the Week do we see the most shootings??",
+       x = "Day of Week",
+       y = "Number of Incidents") 
+```
+**Observation :** Shootings increase significantly(approx 25 percent) on weekends and then fall back on weekdays. Monday being the highest of the weekdays.
+
+## 4. **Model : ** Is there a correlation between murder and time of the day? Are there more reported murders for a particular time of the day?
+ 
+We will create a linear regression model for time of the day(represented by the minute of the day) and number of incidents reported on that minute for the city. The goal is to see a trend of how many reported incidents for a particular minute of the day(00:00 means minute 0 of the day and 23:59 means minute 1440 for a given day of 24 hours). The data will be split into number of incidents for a particular minute of the day. We will then find the p value for the model and check if our hypothesis is statistically significant.
+
+```{r} 
+df_mod = df%>% 
+     group_by(BORO,OCCUR_TIME,STATISTICAL_MURDER_FLAG) %>%
+     count()
+
+df_mod$hour <- hour(df_mod$OCCUR_TIME)
+df_mod$minute_of_day <- hour(df_mod$OCCUR_TIME)*60 + minute(df_mod$OCCUR_TIME)
+df_mod_m = filter(df_mod, STATISTICAL_MURDER_FLAG == TRUE )
+
+ ggplot(df_mod_m, aes(x=minute_of_day, y=n)) +
+     geom_point() +
+     geom_smooth(method=lm, se=FALSE) +
+  labs(title = "Every Murder(shooting) reported for cumulative minute of a day(minute 0 to 1440)",
+       x = "Minute of the day(0 -> 1440)",
+       y = "Incident")
+```
+**Model Observation **
+
+We observe that the p-value is 0.0526 i.e p-value is greater tha  0.05. hence we cannot properly justify our hypothesis about the co-relation between time and reported murders. The model is dependent of factors such as day of the week, time of the year, neighbourhood and socio-political factors such as pandemic, social climate of the region etc and just time of the day is not significant for predicting crime.
+
+```{r}
+
+mod <- lm(minute_of_day ~ n, data=df_mod_m)
+
+mod
+
+summary(mod)
+
+```
+
+**Conclusion : Addressing Bias** 
+
+It was unexpected to not see a direct correlation between time of the day and reported murders. It was my intuition that we would see a stronger relation between the two and the model would imply that both are directly relation i.e more murders likely to be reported during night time. It shows that this a a complicated idea with way too many dependent factors such as time of the year/socio-political climate in the country for that particular year, wealth inequality of the neighborhood instead of just looking at these two fields and building a citywide model.
+
+As a personal observation, I would have also expected Manhattan to have the most crime due to it being the financial hub and less residential than Brooklyn or Bronx. For the victims, there are a lot more Male victims than Women which is something I also would not have predicted.
+
+I find it a slippery slope to go into the race/gender of perpetrator because without knowledge of sociology and context, forming patterns for racial identity can be misunderstood/weaponized and that is something I would like to understand more not just by looking at this data but alos by being more informed about various factors around hopw to understand racial data.
